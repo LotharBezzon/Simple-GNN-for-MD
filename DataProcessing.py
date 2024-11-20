@@ -43,6 +43,7 @@ def make_basic_graphs(data):
         # Position and type should be enough to understand Coulomb and LJ interactions
         x = np.array([[atom['x'], atom['y'], atom['z'], 
                        Func.one_hot(atom['type']-1, 2)] for atom in atoms])
+        # For the moment, I keep the graph fully connected
         edge_index = np.array([i, j] for i in range(len(atoms)) for j in range(len(atoms)) if i != j)
         # This one-hot vectors should distinguish the three different types of interactions
         edge_attr = np.array([[1,0,0] if atoms[edge[0]]['mol'] != atoms[edge[1]]['mol']            # for LJ + Coul for distant atoms
@@ -51,3 +52,7 @@ def make_basic_graphs(data):
         y = np.array([(atom['fx'], atom['fy'], atom['fz']) for atom in atoms])
         graphs.append(Data(x=x, edge_index=edge_index.t().contiguous(), edge_attr=edge_attr, y=y))
     return graphs
+
+# Build graphs for a SchNet architecture
+def make_SchNet_graphs(data):
+    pass
