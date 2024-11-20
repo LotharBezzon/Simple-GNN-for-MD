@@ -1,5 +1,7 @@
 import numpy as np
 from torch_geometric.data import Data
+import torch
+import torch.nn.functional as Func
 
 def read_data(file):
     with open(file, 'r') as f:
@@ -19,7 +21,7 @@ def read_data(file):
                 for _ in range(atom_number):
                     atom_data = next(lines).split()
                     atom = {
-                        'id': int(atom_data[0]),
+                        'id': int(atom_data[0] - 1), # 0-based indexing
                         'mol': int(atom_data[1]),
                         'type': int(atom_data[2]),
                         'x': float(atom_data[3]),
@@ -33,13 +35,19 @@ def read_data(file):
                 data.append({'timestep': timestep, 'atoms': atoms})
         return data
 
+# The most essential model I could think about
 def make_basic_graphs(data):
     graphs = []
     for frame in data:
         atoms = frame['atoms']
-        x = np.array([[atom['x'], atom['y'], atom['z']] for atom in atoms])
+        # Position and type should be enough to understand Coulomb and LJ interactions
+        x = np.array([[atom['x'], atom['y'], atom['z'], 
+                       Func.one_hot(atom['type']-1, 2)] for atom in atoms])
         edge_index = np.array([i, j] for i in range(len(atoms)) for j in range(len(atoms)) if i != j)
-        edge_attr = np.array([[atom['fx'], atom['fy'], atom['fz']] for atom in atoms])
-        y = np.array([atom['type'] for atom in atoms])
+        # This one-hot vectors should distinguish the three different types of interactions
+        edge_attr = np.array([[1,0,0] if atoms[edge[0]]['mol'] != atoms[edge[1]]['mol']            # for LJ + Coul for distant atoms
+                              else ([0,1,0] if atoms[edge[0]]['type'] != atoms[edge[1]]['type']    # for OH bonds
+                                    else [0,0,1]) for edge in edge_index])                         # for HOH angle rigidity
+        y = np.array([(atom['fx'], atom['fy'], atom['fz']) for atom in atoms])
         graphs.append(Data(x=x, edge_index=edge_index.t().contiguous(), edge_attr=edge_attr, y=y))
     return graphs
