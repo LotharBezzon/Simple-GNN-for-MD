@@ -49,12 +49,14 @@ def make_basic_graphs(data):
         edge_attr = torch.tensor([[1,0,0] if atoms[edge[0]]['mol'] != atoms[edge[1]]['mol']            # for LJ + Coul for distant atoms
                               else ([0,1,0] if atoms[edge[0]]['type'] != atoms[edge[1]]['type']    # for OH bonds
                                     else [0,0,1]) for edge in edge_index])                         # for HOH angle rigidity
-        print(edge_attr)
         y = np.array([(atom['fx'], atom['fy'], atom['fz']) for atom in atoms])
         graphs.append(Data(x=x, edge_index=edge_index.t().contiguous(), edge_attr=edge_attr, y=y))
-        break
     return graphs
 
 # Build graphs for a SchNet architecture
 def make_SchNet_graphs(data):
+    pass
+
+# Build graphs with encoded node features
+def make_encoded_graphs(data):
     pass
