@@ -17,7 +17,7 @@ print('Data loaded')
 
 model = MessagePassingNetwork()
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-lossFunc = torch.nn.BCELoss()
+lossFunc = torch.nn.MSELoss()
 
 def train(model, optimizer, loader):
     model.train()

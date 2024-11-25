@@ -1,5 +1,6 @@
 import numpy as np
 from torch_geometric.data import Data
+from torch_geometric.nn import knn_graph
 import torch
 import torch.nn.functional as Func
 
@@ -36,21 +37,31 @@ def read_data(file):
         return data
 
 # The most essential model I could think about
-def make_basic_graphs(data):
+def make_basic_graphs(data, k=5):
     graphs = []
     for frame in data:
         atoms = frame['atoms']
         # Position and type should be enough to understand Coulomb and LJ interactions
-        x = np.array([[atom['x'], atom['y'], atom['z'], 
-                       atom['type']-1] for atom in atoms])
-        # For the moment, I keep the graph fully connected
-        edge_index = torch.tensor([[i, j] for i in range(len(atoms)) for j in range(len(atoms)) if i != j], dtype=torch.long)
+        x = torch.tensor([[atom['x'], atom['y'], atom['z'], 
+                           atom['type']-1] for atom in atoms], dtype=torch.float)
+        
+        # Create k-nearest neighbors graph
+        edge_index = knn_graph(x[:, :3], k=k, batch=None, loop=False)
+        
         # This one-hot vectors should distinguish the three different types of interactions
-        edge_attr = torch.tensor([[1,0,0] if atoms[edge[0]]['mol'] != atoms[edge[1]]['mol']            # for LJ + Coul for distant atoms
-                              else ([0,1,0] if atoms[edge[0]]['type'] != atoms[edge[1]]['type']    # for OH bonds
-                                    else [0,0,1]) for edge in edge_index])                         # for HOH angle rigidity
-        y = np.array([(atom['fx'], atom['fy'], atom['fz']) for atom in atoms])
-        graphs.append(Data(x=x, edge_index=edge_index.t().contiguous(), edge_attr=edge_attr, y=y))
+        atom_mols = torch.tensor([atom['mol'] for atom in atoms])
+        atom_types = torch.tensor([atom['type'] for atom in atoms])
+        
+        edge_attr = torch.zeros((edge_index.size(1), 3), dtype=torch.float)
+        mol_diff = atom_mols[edge_index[0]] != atom_mols[edge_index[1]]
+        type_diff = atom_types[edge_index[0]] != atom_types[edge_index[1]]
+        
+        edge_attr[mol_diff, 0] = 1  # LJ + Coul for distant atoms
+        edge_attr[~mol_diff & type_diff, 1] = 1  # OH bonds
+        edge_attr[~mol_diff & ~type_diff, 2] = 1  # HOH angle rigidity
+
+        y = torch.tensor([(atom['fx'], atom['fy'], atom['fz']) for atom in atoms], dtype=torch.float)
+        graphs.append(Data(x=x, edge_index=edge_index, edge_attr=edge_attr, y=y))
     return graphs
 
 # Build graphs for a SchNet architecture
