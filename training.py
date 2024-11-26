@@ -36,20 +36,18 @@ def train(model, optimizer, loader):
 @torch.no_grad()
 def test(model, loader):
     model.eval()
-    total_correct = 0
     total_loss = 0
     for data in loader:
         pred = model(data)
         loss = lossFunc(pred, data.y)
         total_loss += loss.item() * data.num_graphs
-        total_correct += int(( (pred > 0.5)== data.y).sum())
-    return total_correct / len(loader.dataset), total_loss / len(train_loader.dataset)
+    return total_loss / len(train_loader.dataset)
 
 test_losses = []
 train_losses = []
 for epoch in range(1, 100 ):
     loss = train(model, optimizer, train_loader)
-    test_acc,test_loss = test(model, test_loader)
+    test_loss = test(model, test_loader)
     test_losses.append(test_loss)
     train_losses.append(loss)
     print(f'Epoch: {epoch:02d}, Train Loss: {loss:.4f}, Test Loss: {test_loss:.4f}, Test Accuracy: {test_acc:.4f}')
