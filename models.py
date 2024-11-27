@@ -1,5 +1,6 @@
 import torch
 from torch.nn import Sequential, Linear, ReLU
+import torch.nn.functional as F
 from torch_geometric.nn import MessagePassing, GATConv
 
 class BasicMPNN(MessagePassing):
@@ -61,17 +62,19 @@ class GATNetwork(torch.nn.Module):
         super().__init__()
         N_features=20
         torch.manual_seed(12345)
-        self.pass1 = GATConv(in_channels, N_features, edge_dim=7)
-        self.pass2 = GATConv(N_features, N_features, edge_dim=7)
+        self.conv1 = GATConv(in_channels, N_features, edge_dim=7, heads=4)
+        self.conv2 = GATConv(N_features, N_features, edge_dim=7)
         self.decoder = Sequential(Linear(N_features, 10),
                                   ReLU(),
                                   Linear(10, out_channels))
         
     def forward(self, data):
-        h = self.pass1(data.x, data.edge_index, data.edge_attr)
-        h = h.relu()
+        data.x = F.dropout(data.x, p=0.6, training=self.training)
+        h = self.conv1(data.x, data.edge_index, data.edge_attr)
+        h = F.elu(h)
+        h = F.dropout(h, p=0.6, training=self.training)
         h = self.pass2(h, data.edge_index, data.edge_attr)
-        h = h.relu()
+        h = F.elu(h)
         h = self.decoder(h)
         return h
 
