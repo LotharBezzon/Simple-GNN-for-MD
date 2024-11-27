@@ -1,6 +1,6 @@
 import torch
 from torch.nn import Sequential, Linear, ReLU
-from torch_geometric.nn import MessagePassing, GCNConv
+from torch_geometric.nn import MessagePassing, GATConv
 
 class BasicMPNN(MessagePassing):
     def __init__(self, in_channels, out_channels):
@@ -22,7 +22,7 @@ class BasicMPNN(MessagePassing):
         input = torch.cat([h_j, edge_attr], dim=-1)
         return self.mlp(input)
 
-class MessagePassingNetwork(torch.nn.Module):
+class BasicMessagePassingNetwork(torch.nn.Module):
     def __init__(self):
         super().__init__()
         N_features=20
@@ -42,3 +42,38 @@ class MessagePassingNetwork(torch.nn.Module):
 
         h = torch.sigmoid(self.classifier(h))
         return h
+
+class NodeEncoding(torch.nn.Module):
+    def __init__(self, node_dim, encoding_dim):
+        super().__init__()
+        self.layer1 = Linear(node_dim, 10)
+        self.layer2 = Linear(10, encoding_dim)
+
+    def forward(self, data):
+        h = self.layer1(data.x)
+        h = ReLU(h)
+        h = self.layer2(h)
+        data.x = h
+        return data
+
+class GATNetwork(torch.nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        N_features=20
+        torch.manual_seed(12345)
+        self.pass1 = GATConv(in_channels, N_features, edge_dim=7)
+        self.pass2 = GATConv(N_features, N_features, edge_dim=7)
+        self.decoder = Sequential(Linear(N_features, 10),
+                                  ReLU(),
+                                  Linear(10, out_channels))
+        
+    def forward(self, data):
+        h = self.pass1(data.x, data.edge_index, data.edge_attr)
+        h = h.relu()
+        h = self.pass2(h, data.edge_index, data.edge_attr)
+        h = h.relu()
+        h = self.decoder(h)
+        return h
+
+
+        

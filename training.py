@@ -2,7 +2,7 @@ from torch_geometric.loader import DataLoader
 import torch
 from torch_geometric.data import DataLoader
 from DataProcessing import read_data, make_basic_graphs
-from models import MessagePassingNetwork
+from models import BasicMessagePassingNetwork
 from sklearn.model_selection import train_test_split
 
 data = read_data('data/dump.1.lammpstrj')
@@ -15,7 +15,7 @@ train_loader = DataLoader(train_graphs, batch_size=10, shuffle=True)
 test_loader = DataLoader(test_graphs, batch_size=10)
 print('Data loaded')
 
-model = MessagePassingNetwork()
+model = BasicMessagePassingNetwork()
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 lossFunc = torch.nn.MSELoss()
 
