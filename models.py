@@ -47,12 +47,12 @@ class BasicMessagePassingNetwork(torch.nn.Module):
 class NodeEncoding(torch.nn.Module):
     def __init__(self, node_dim, encoding_dim):
         super().__init__()
-        self.layer1 = Linear(node_dim, 10)
-        self.layer2 = Linear(10, encoding_dim)
+        self.layer1 = Linear(node_dim, 6)
+        self.layer2 = Linear(6, encoding_dim)
 
     def forward(self, data):
         h = self.layer1(data.x)
-        h = ReLU(h)
+        h = h.relu()
         h = self.layer2(h)
         data.x = h
         return data
@@ -61,20 +61,25 @@ class GATNetwork(torch.nn.Module):
     def __init__(self, in_channels, out_channels):
         super().__init__()
         N_features=20
+        encoding_dim = 8
         torch.manual_seed(12345)
-        self.conv1 = GATConv(in_channels, N_features, edge_dim=7, heads=4)
-        self.conv2 = GATConv(N_features, N_features, edge_dim=7)
+        self.encoder = NodeEncoding(in_channels, encoding_dim)
+        self.conv1 = GATConv(encoding_dim, N_features, edge_dim=4, heads=4)
+        self.conv2 = GATConv(4*N_features, N_features, edge_dim=4)
         self.decoder = Sequential(Linear(N_features, 10),
                                   ReLU(),
-                                  Linear(10, out_channels))
+                                  Linear(10, out_channels),
+                                  ReLU(),
+                                  Linear(out_channels, out_channels))
         
     def forward(self, data):
-        data.x = F.dropout(data.x, p=0.6, training=self.training)
-        h = self.conv1(data.x, data.edge_index, data.edge_attr)
-        h = F.elu(h)
+        h = self.encoder(data).x
         h = F.dropout(h, p=0.6, training=self.training)
-        h = self.pass2(h, data.edge_index, data.edge_attr)
-        h = F.elu(h)
+        h = self.conv1(h, edge_index=data.edge_index, edge_attr=data.edge_attr)
+        h = F.relu(h)
+        h = F.dropout(h, p=0.6, training=self.training)
+        h = self.conv2(h, edge_index=data.edge_index, edge_attr=data.edge_attr)
+        h = F.relu(h)
         h = self.decoder(h)
         return h
 

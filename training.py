@@ -1,8 +1,8 @@
 from torch_geometric.loader import DataLoader
 import torch
-from torch_geometric.data import DataLoader
-from DataProcessing import read_data, make_basic_graphs
-from models import BasicMessagePassingNetwork
+from torch_geometric.loader import DataLoader
+from DataProcessing import read_data, make_basic_graphs, make_SchNetlike_graphs
+from models import BasicMessagePassingNetwork, GATNetwork
 from sklearn.model_selection import train_test_split
 
 
@@ -26,6 +26,7 @@ def test(model, loader, lossFunc):
     total_loss = 0
     for data in loader:
         pred = model(data)
+        print(pred, data.y)
         loss = lossFunc(pred, data.y)
         total_loss += loss.item() * data.num_graphs
     return total_loss / len(train_loader.dataset)
@@ -33,7 +34,8 @@ def test(model, loader, lossFunc):
 if __name__ == '__main__':
     data = read_data('data/dump.1.lammpstrj')
     print('Data read')
-    graphs = make_basic_graphs(data[:10])
+    graphs = make_SchNetlike_graphs(data[:10])
+    #graphs = make_basic_graphs(data)
     print('Graphs made')
     train_graphs, test_graphs = train_test_split(graphs, test_size=0.1, random_state=42)
 
@@ -41,9 +43,10 @@ if __name__ == '__main__':
     test_loader = DataLoader(test_graphs, batch_size=10)
     print('Data loaded')
 
-    model = BasicMessagePassingNetwork()
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-    lossFunc = torch.nn.MSELoss()
+    model = GATNetwork(2, 3)
+    #model = BasicMessagePassingNetwork()
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.005)
+    lossFunc = torch.nn.MSELoss(reduction='sum')
 
     test_losses = []
     train_losses = []

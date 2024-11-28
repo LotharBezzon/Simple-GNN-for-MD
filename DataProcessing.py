@@ -45,7 +45,7 @@ def minimum_image_distance(coords1, coords2, box_size):
 
   delta = coords1 - coords2
   delta -= torch.round(delta / box_size) * box_size
-  distance = torch.norm(delta)
+  distance = torch.norm(delta, dim=-1)
   return distance
 
 # The most essential model I could think about
@@ -81,25 +81,43 @@ def make_SchNetlike_graphs(data):
     graphs = []
     for frame in data:
         atoms = frame['atoms']
-        x = torch.tensor([[atom['type'] - 0.5] for atom in atoms], dtype=torch.float)
-        
+        x = torch.tensor([[atom['type'] - 1.5, atom['id']] for atom in atoms], dtype=torch.float)
+
         # Create a fully connected graph
         edge_index = torch.combinations(torch.arange(frame['num_atoms']), r=2).t()
         
         # Duplicate edges in the opposite direction to make it undirected
         edge_index = torch.cat([edge_index, edge_index.flip(0)], dim=1)
         
-        # Edge features are smooth 'one-hot vectors' to represent distances  
-        dist_one_hot = [0.5, 0.96, 1.69, 1.97, 3, 5, 8]    # 0.96 for O-H, 1.69 for H-H, 1.97 for H bonds
         positions = torch.tensor([[atom['x'], atom['y'], atom['z']] for atom in atoms], dtype=torch.float)
         start_nodes, end_nodes = edge_index
         distances = minimum_image_distance(positions[start_nodes], positions[end_nodes], frame['box_size'])
         
-        edge_attr = torch.zeros((edge_index.size(1), len(dist_one_hot)), dtype=torch.float)
-        for i, dist in enumerate(dist_one_hot):
-            edge_attr[:, i] = np.e ** (-(distances - dist)**2 / 0.4)    # 0.4 is quite arbitrary
+        # Filter out edges with distances greater than 2.5
+        mask = distances <= 2.5
+        edge_index = edge_index[:, mask]
+        distances = distances[mask]
 
-        y = torch.tensor([(atom['fx'], atom['fy'], atom['fz']) for atom in atoms], dtype=torch.float)
+        # Edge features are smooth 'one-hot vectors' to represent distances  
+        #dist_one_hot = [0.5, 1.02, 1.69, 1.97, 3, 4]    # 0.96 for O-H, 1.69 for H-H, 1.97 for H bonds
+        #edge_attr = torch.zeros((edge_index.size(1), len(dist_one_hot)), dtype=torch.float)
+        #for i, dist in enumerate(dist_one_hot):
+        #    edge_attr[:, i] = np.e ** (-(distances - dist)**2 / 0.15)    # 0.4 is quite arbitrary
+        #edge_attr = distances
+
+        atom_mols = torch.tensor([atom['mol'] for atom in atoms])
+        atom_types = torch.tensor([atom['type'] for atom in atoms])
+        
+        edge_attr = torch.zeros((edge_index.size(1), 4), dtype=torch.float)
+        mol_diff = atom_mols[edge_index[0]] != atom_mols[edge_index[1]]
+        type_diff = atom_types[edge_index[0]] != atom_types[edge_index[1]]
+        
+        edge_attr[mol_diff, 0] = 1  # LJ + Coul for distant atoms
+        edge_attr[~mol_diff & type_diff, 1] = 1  # OH bonds
+        edge_attr[~mol_diff & ~type_diff, 2] = 1  # HOH angle rigidity
+        edge_attr[:, 3] = distances
+
+        y = torch.tensor([[atom['fx'], atom['fy'], atom['fz']] for atom in atoms], dtype=torch.float)
         graphs.append(Data(x=x, edge_index=edge_index, edge_attr=edge_attr, y=y))
     return graphs
 
