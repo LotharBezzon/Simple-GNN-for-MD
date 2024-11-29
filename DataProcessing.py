@@ -81,7 +81,7 @@ def make_SchNetlike_graphs(data):
     graphs = []
     for frame in data:
         atoms = frame['atoms']
-        x = torch.tensor([[atom['type'] - 1.5, atom['id']] for atom in atoms], dtype=torch.float)
+        x = torch.tensor([[(atom['type'] - 1.5)*2] for atom in atoms], dtype=torch.float)
 
         # Create a fully connected graph
         edge_index = torch.combinations(torch.arange(frame['num_atoms']), r=2).t()
@@ -93,8 +93,8 @@ def make_SchNetlike_graphs(data):
         start_nodes, end_nodes = edge_index
         distances = minimum_image_distance(positions[start_nodes], positions[end_nodes], frame['box_size'])
         
-        # Filter out edges with distances greater than 2.5
-        mask = distances <= 2.5
+        # Filter out edges with distances greater than 2.3
+        mask = distances <= 2.3
         edge_index = edge_index[:, mask]
         distances = distances[mask]
 

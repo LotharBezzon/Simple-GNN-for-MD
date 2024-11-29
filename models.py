@@ -1,87 +1,65 @@
 import torch
-from torch.nn import Sequential, Linear, ReLU
+from torch.nn import Sequential, Linear, GELU, BatchNorm1d
 import torch.nn.functional as F
 from torch_geometric.nn import MessagePassing, GATConv
 
-class BasicMPNN(MessagePassing):
+class MPLayer(MessagePassing):
     def __init__(self, in_channels, out_channels):
-        super(BasicMPNN, self).__init__(aggr='mean')
-        self.mlp = Sequential(Linear(in_channels+3, out_channels), # 3 is the number of edge features
-                              ReLU(),
-                              Linear(out_channels, out_channels),
-                             # ReLU()
-                              )
+        super(MPLayer, self).__init__(aggr='sum')
+        self.mlp = mlp(in_channels, out_channels)
 
-    def forward(self, h,  edge_index, edge_attr):
+    def forward(self, v,  edge_index, e):
         # Start propagating messages.
-        accumulated_message= self.propagate(h=h, edge_index=edge_index, edge_attr=edge_attr)
+        accumulated_message= self.propagate(v=v, edge_index=edge_index, e=e)
         return accumulated_message
 
-    def message(self, h_j, edge_attr):
-        # x_j has shape [E, out_channels]
-        # edge_attr has shape [E, edge_features]
-        input = torch.cat([h_j, edge_attr], dim=-1)
-        return self.mlp(input)
+    def message(self, v_i, v_j, e):
+        return self.mlp(v_i + v_j + e)
 
-class BasicMessagePassingNetwork(torch.nn.Module):
-    def __init__(self):
+class mlp(torch.nn.Module):
+    def __init__(self, in_channels, out_channel, hidden_dim=16, hidden_num=2, activation=GELU()):
         super().__init__()
-        N_features=20
+        layers = [Linear(in_channels, hidden_dim), activation]
+        for _ in range(hidden_num):
+            layers.append(Linear(hidden_dim, hidden_dim))
+            layers.append(activation)
+        layers.append(Linear(hidden_dim, out_channel))
+        self.mlp = Sequential(*layers)
+        self._init_parameters()
+
+    def _init_parameters(self):
+         for layer in self.mlp:
+            if isinstance(layer, Linear):
+                torch.nn.init.xavier_uniform_(layer.weight)
+                if layer.bias is not None:
+                    torch.nn.init.zeros_(layer.bias)
+
+    def forward(self, x):
+            return self.mlp(x)
+
+class GNN(torch.nn.Module):
+    def __init__(self, node_dim, edge_dim, embedding_dim, out_dim, mp_num=3, activation=GELU()):
+        super().__init__()
         torch.manual_seed(12345)
-        self.pass1 = BasicMPNN(4, N_features)
-        self.pass2 = BasicMPNN(N_features, N_features)
-        self.classifier = Linear(N_features, 3)
-
-    def forward(self, data):
-        edge_index=data.edge_index
-        edge_attr=data.edge_attr
-        x=data.x
-
-        h = self.pass1(h=x , edge_index=edge_index, edge_attr=edge_attr)
-        h = h.relu()
-        h = self.pass2(h=h,edge_index=edge_index, edge_attr=edge_attr)
-
-        h = torch.sigmoid(self.classifier(h))
-        return h
-
-class NodeEncoding(torch.nn.Module):
-    def __init__(self, node_dim, encoding_dim):
-        super().__init__()
-        self.layer1 = Linear(node_dim, 6)
-        self.layer2 = Linear(6, encoding_dim)
-
-    def forward(self, data):
-        h = self.layer1(data.x)
-        h = h.relu()
-        h = self.layer2(h)
-        data.x = h
-        return data
-
-class GATNetwork(torch.nn.Module):
-    def __init__(self, in_channels, out_channels):
-        super().__init__()
-        N_features=20
-        encoding_dim = 8
-        torch.manual_seed(12345)
-        self.encoder = NodeEncoding(in_channels, encoding_dim)
-        self.conv1 = GATConv(encoding_dim, N_features, edge_dim=4, heads=4)
-        self.conv2 = GATConv(4*N_features, N_features, edge_dim=4)
-        self.decoder = Sequential(Linear(N_features, 10),
-                                  ReLU(),
-                                  Linear(10, out_channels),
-                                  ReLU(),
-                                  Linear(out_channels, out_channels))
+        self.node_encoder = mlp(node_dim, embedding_dim)
+        self.edge_encoder = mlp(edge_dim, embedding_dim)
+        self.message_passing = []
+        norm_layer = BatchNorm1d(embedding_dim)
+        for _ in range(mp_num):
+            self.message_passing.append(norm_layer, MPLayer(embedding_dim, embedding_dim))
+        self.decoder = mlp(embedding_dim, out_dim)
+        
         
     def forward(self, data):
-        h = self.encoder(data).x
-        h = F.dropout(h, p=0.6, training=self.training)
-        h = self.conv1(h, edge_index=data.edge_index, edge_attr=data.edge_attr)
-        h = F.relu(h)
-        h = F.dropout(h, p=0.6, training=self.training)
-        h = self.conv2(h, edge_index=data.edge_index, edge_attr=data.edge_attr)
-        h = F.relu(h)
-        h = self.decoder(h)
-        return h
+        v = self.node_encoder(data.x)
+        e = self.edge_encoder(data.edge_attr)
+        for layer in self.message_passing:
+            if isinstance(layer, MPLayer):
+                v = v + layer(v, data.edge_index, e)    # Residual connection
+            elif isinstance(layer, BatchNorm1d):
+                v = layer(v)
+        f = self.decoder(v)
+        return f
 
 
         
