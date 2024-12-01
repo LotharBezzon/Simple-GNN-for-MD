@@ -98,6 +98,3 @@ def make_SchNetlike_graphs(data):
         graphs.append(Data(x=x, edge_index=edge_index, edge_attr=edge_attr, y=y))
     return graphs
 
-# Build graphs with encoded node features
-def make_encoded_graphs(data):
-    pass

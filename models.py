@@ -17,7 +17,7 @@ class MPLayer(MessagePassing):
         return self.mlp(torch.cat((v_i + v_j, e), dim=1))
 
 class mlp(torch.nn.Module):
-    def __init__(self, in_channels, out_channel, hidden_dim=128, hidden_num=2, activation=GELU()):
+    def __init__(self, in_channels, out_channel, hidden_dim=128, hidden_num=1, activation=GELU()):
         super().__init__()
         #normalization = BatchNorm1d(in_channels)
         layers = [Linear(in_channels, hidden_dim), activation]

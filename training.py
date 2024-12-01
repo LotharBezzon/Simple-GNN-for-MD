@@ -6,11 +6,13 @@ from sklearn.model_selection import train_test_split
 from sklearn.utils import shuffle
 import os
 
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 def train(model, optimizer, loader, lossFunc, clip_value=1.0):
     model.train()
     total_loss = 0
     for data in loader:
+        data = data.to(device)
         optimizer.zero_grad()  # Clear gradients.
         out = model(data)  # Forward pass.
         loss = lossFunc(out, data.y)  # Loss computation.
@@ -30,6 +32,7 @@ def test(model, loader, lossFunc):
     total_loss = 0
     count = 0
     for data in loader:
+        data = data.to(device)
         pred = model(data)
         loss = lossFunc(pred, data.y)
         count += 1
@@ -50,7 +53,7 @@ def save_checkpoint(model, optimizer, epoch, checkpoint_dir='checkpoints'):
     print(f'Checkpoint saved at epoch {epoch}')
 
 if __name__ == '__main__':
-    files = [f'data/dump.{i}.lammpstrj' for i in range(1, 11)]
+    files = [f'data/dump.{i}.lammpstrj' for i in range(1, 6)]
     data = read_data(files)
     print('Data read')
     
@@ -59,11 +62,11 @@ if __name__ == '__main__':
     print('Graphs made')
 
     train_graphs, test_graphs = train_test_split(graphs, test_size=0.1, random_state=42)
-    train_loader = DataLoader(train_graphs, batch_size=32)
-    test_loader = DataLoader(test_graphs, batch_size=32)
+    train_loader = DataLoader(train_graphs, batch_size=256)
+    test_loader = DataLoader(test_graphs, batch_size=256)
     print('Data loaded')
 
-    model = GNN(1, 4, 3)
+    model = GNN(1, 4, 3).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
     lossFunc = torch.nn.L1Loss(reduction='sum')
 
