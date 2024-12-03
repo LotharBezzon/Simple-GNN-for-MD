@@ -78,7 +78,8 @@ if __name__ == '__main__':
         test_loss = test(model, test_loader, lossFunc)
         test_losses.append(test_loss)
         train_losses.append(loss)
-        print(f'Epoch: {epoch:02d}, Train Loss: {loss:.4f}, Test Loss: {test_loss:.4f}')
+        current_lr = optimizer.param_groups[0]['lr']
+        print(f'Epoch: {epoch:02d}, Train Loss: {loss:.4f}, Test Loss: {test_loss:.4f}, LR: {current_lr:.6f}')
         scheduler.step()
 
         if epoch % 5 == 0:
