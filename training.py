@@ -67,7 +67,8 @@ if __name__ == '__main__':
     print('Data loaded')
 
     model = GNN(1, 4, 3).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.0003)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=3, gamma=0.1)
     lossFunc = torch.nn.L1Loss(reduction='sum')
 
     test_losses = []
@@ -78,6 +79,7 @@ if __name__ == '__main__':
         test_losses.append(test_loss)
         train_losses.append(loss)
         print(f'Epoch: {epoch:02d}, Train Loss: {loss:.4f}, Test Loss: {test_loss:.4f}')
+        scheduler.step()
 
-        if epoch % 10 == 0:
+        if epoch % 5 == 0:
             save_checkpoint(model, optimizer, epoch)
