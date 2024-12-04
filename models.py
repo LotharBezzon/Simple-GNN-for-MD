@@ -1,5 +1,5 @@
 import torch
-from torch.nn import Sequential, Linear, GELU, BatchNorm1d, Dropout
+from torch.nn import Sequential, Linear, GELU, BatchNorm1d, Dropout, LayerNorm, ReLU
 import torch.nn.functional as F
 from torch_geometric.nn import MessagePassing, GATConv
 
@@ -17,7 +17,7 @@ class MPLayer(MessagePassing):
         return self.mlp(torch.cat((v_i + v_j, e), dim=1))
 
 class mlp(torch.nn.Module):
-    def __init__(self, in_channels, out_channel, hidden_dim=128, hidden_num=1, activation=GELU()):
+    def __init__(self, in_channels, out_channel, hidden_dim=128, hidden_num=1, activation=ReLU()):
         super().__init__()
         #normalization = BatchNorm1d(in_channels)
         layers = [Linear(in_channels, hidden_dim), activation]
@@ -46,7 +46,7 @@ class GNN(torch.nn.Module):
         self.node_encoder = mlp(node_dim, embedding_dim)
         self.edge_encoder = mlp(edge_dim, embedding_dim)
         self.message_passing = []
-        self.norm_layer = BatchNorm1d(embedding_dim)
+        self.norm_layer = LayerNorm(embedding_dim)
         for _ in range(mp_num):
             self.message_passing.append(self.norm_layer)
             self.message_passing.append(MPLayer(embedding_dim, embedding_dim))
@@ -66,7 +66,7 @@ class GNN(torch.nn.Module):
             if isinstance(layer, MPLayer):
                 v = v + layer(v, data.edge_index, e)  # Residual connection
                 #print("After MPLayer:", v)
-            elif isinstance(layer, BatchNorm1d):
+            else:
                 v = layer(v)
                 #print("After BatchNorm1d:", v)
         

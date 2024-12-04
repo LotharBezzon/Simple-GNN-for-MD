@@ -11,6 +11,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 def train(model, optimizer, loader, lossFunc, clip_value=1.0):
     model.train()
     total_loss = 0
+    global batch_size
     for data in loader:
         data = data.to(device)
         optimizer.zero_grad()  # Clear gradients.
@@ -23,7 +24,7 @@ def train(model, optimizer, loader, lossFunc, clip_value=1.0):
         
         optimizer.step()  # Update model parameters.
         total_loss += loss.item() * data.num_graphs
-    return total_loss / len(loader.dataset)
+    return total_loss / len(loader.dataset) / batch_size
 
 
 @torch.no_grad()
@@ -31,15 +32,16 @@ def test(model, loader, lossFunc):
     model.eval()
     total_loss = 0
     count = 0
+    global batch_size
     for data in loader:
         data = data.to(device)
         pred = model(data)
         loss = lossFunc(pred, data.y)
         count += 1
-        if count % 128 == 0:
+        if count % 1024 == 0:
             print(pred[:5], data.y[:5])
         total_loss += loss.item() * data.num_graphs
-    return total_loss / len(train_loader.dataset)
+    return total_loss / len(train_loader.dataset) / batch_size
 
 def save_checkpoint(model, optimizer, epoch, checkpoint_dir='checkpoints'):
     if not os.path.exists(checkpoint_dir):
@@ -53,22 +55,23 @@ def save_checkpoint(model, optimizer, epoch, checkpoint_dir='checkpoints'):
     print(f'Checkpoint saved at epoch {epoch}')
 
 if __name__ == '__main__':
-    files = [f'data/dump.{i}.lammpstrj' for i in range(1, 6)]
+    files = [f'data/short.{i}.lammpstrj' for i in range(1, 21)]
     data = read_data(files)
     print('Data read')
     
     graphs = make_SchNetlike_graphs(data)
-    graphs = shuffle(graphs, random_state=42)
     print('Graphs made')
 
+    graphs = shuffle(graphs, random_state=42)
     train_graphs, test_graphs = train_test_split(graphs, test_size=0.1, random_state=42)
-    train_loader = DataLoader(train_graphs, batch_size=256)
-    test_loader = DataLoader(test_graphs, batch_size=256)
+    batch_size = 1
+    train_loader = DataLoader(train_graphs, batch_size=batch_size)
+    test_loader = DataLoader(test_graphs, batch_size=batch_size)
     print('Data loaded')
 
     model = GNN(1, 4, 3).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.0003)
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=3, gamma=0.1)
+    optimizer = torch.optim.Adam(model.parameters(), lr=8e-9)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=3, gamma=0.8)
     lossFunc = torch.nn.L1Loss(reduction='sum')
 
     test_losses = []
@@ -79,7 +82,7 @@ if __name__ == '__main__':
         test_losses.append(test_loss)
         train_losses.append(loss)
         current_lr = optimizer.param_groups[0]['lr']
-        print(f'Epoch: {epoch:02d}, Train Loss: {loss:.4f}, Test Loss: {test_loss:.4f}, LR: {current_lr:.6f}')
+        print(f'Epoch: {epoch:02d}, Train Loss: {loss:.4f}, Test Loss: {test_loss:.4f}, LR: {current_lr*10**7:.2f}*10^(-7)')
         scheduler.step()
 
         if epoch % 5 == 0:
