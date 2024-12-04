@@ -54,6 +54,18 @@ def save_checkpoint(model, optimizer, epoch, checkpoint_dir='checkpoints'):
     }, checkpoint_path)
     print(f'Checkpoint saved at epoch {epoch}')
 
+def load_checkpoint(model, optimizer, checkpoint_path):
+    if os.path.isfile(checkpoint_path):
+        checkpoint = torch.load(checkpoint_path)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        epoch = checkpoint['epoch']
+        print(f'Checkpoint loaded from epoch {epoch}')
+        return epoch
+    else:
+        print(f'No checkpoint found at {checkpoint_path}')
+        return 0
+
 if __name__ == '__main__':
     files = [f'data/short.{i}.lammpstrj' for i in range(1, 21)]
     data = read_data(files)
@@ -74,9 +86,12 @@ if __name__ == '__main__':
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=3, gamma=0.8)
     lossFunc = torch.nn.L1Loss(reduction='sum')
 
+    # Load from checkpoint if available
+    start_epoch = load_checkpoint(model, optimizer, 'checkpoints/checkpoint_epoch_6.pth')
+
     test_losses = []
     train_losses = []
-    for epoch in range(1, 100 ):
+    for epoch in range(start_epoch + 1, 50):
         loss = train(model, optimizer, train_loader, lossFunc, clip_value=1.0)
         test_loss = test(model, test_loader, lossFunc)
         test_losses.append(test_loss)
@@ -85,5 +100,5 @@ if __name__ == '__main__':
         print(f'Epoch: {epoch:02d}, Train Loss: {loss:.4f}, Test Loss: {test_loss:.4f}, LR: {current_lr*10**7:.2f}*10^(-7)')
         scheduler.step()
 
-        if epoch % 5 == 0:
+        if epoch % 6 == 0:
             save_checkpoint(model, optimizer, epoch)
