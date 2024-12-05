@@ -38,7 +38,7 @@ def test(model, loader, lossFunc):
         pred = model(data)
         loss = lossFunc(pred, data.y)
         count += 1
-        if count % 1024 == 0:
+        if count % 64 == 0:
             print(pred[:5], data.y[:5])
         total_loss += loss.item() * data.num_graphs
     return total_loss / len(train_loader.dataset) / batch_size
@@ -67,27 +67,28 @@ def load_checkpoint(model, optimizer, checkpoint_path):
         return 0
 
 if __name__ == '__main__':
-    files = [f'data/short.{i}.lammpstrj' for i in range(1, 21)]
+    files = [f'data/N216.{i}.lammpstrj' for i in range(1, 101)]
     data = read_data(files)
     print('Data read')
     
     graphs = make_SchNetlike_graphs(data)
+    print(len(graphs))
     print('Graphs made')
 
     graphs = shuffle(graphs, random_state=42)
     train_graphs, test_graphs = train_test_split(graphs, test_size=0.1, random_state=42)
-    batch_size = 1
+    batch_size = 16
     train_loader = DataLoader(train_graphs, batch_size=batch_size)
     test_loader = DataLoader(test_graphs, batch_size=batch_size)
     print('Data loaded')
 
     model = GNN(1, 4, 3).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=8e-9)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-6)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=3, gamma=0.8)
     lossFunc = torch.nn.L1Loss(reduction='sum')
 
     # Load from checkpoint if available
-    start_epoch = load_checkpoint(model, optimizer, 'checkpoints/checkpoint_epoch_6.pth')
+    start_epoch = load_checkpoint(model, optimizer, 'checkpoints/checkpoint_epoch_5.pth')
 
     test_losses = []
     train_losses = []
