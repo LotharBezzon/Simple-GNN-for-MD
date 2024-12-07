@@ -30,7 +30,6 @@ class MPLayer(MessagePassing):
     def __init__(self, in_channels, out_channels):
         super().__init__(aggr='mean')
         self.mlp = mlp(2*in_channels, out_channels)
-        self.norm_layer = BatchNorm1d(in_channels)
 
     def forward(self, edge_index, v,  e):
         # Start propagating messages.
@@ -64,7 +63,7 @@ class GNN(torch.nn.Module):
         e = self.norm_layer(e)
         #print("After norm_layer:", e)
         
-        for layer in self.message_passing:
+        for layer in self.message_passing_layers:
             if isinstance(layer, MPLayer):
                 v = v + layer(data.edge_index, v, e)  # Residual connection
                 #print("After MPLayer:", v)

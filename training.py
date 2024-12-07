@@ -39,7 +39,7 @@ def test(model, loader, lossFunc):
         pred = model(data)
         loss = lossFunc(pred, data.y)
         count += 1
-        if count % 16 == 0:
+        if count % 4 == 0:
             print(pred[:5], data.y[:5])
         total_loss += loss.item() * data.num_graphs
     return total_loss / len(train_loader.dataset) / batch_size
@@ -84,7 +84,7 @@ if __name__ == '__main__':
     test_loader = DataLoader(test_graphs, batch_size=batch_size)
     print('Data loaded')
 
-    model = SimpleGNN(1, 4, 3).to(device)
+    model = GNN(1, 4, 3).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=3, gamma=0.5)
     lossFunc = torch.nn.L1Loss(reduction='sum')
