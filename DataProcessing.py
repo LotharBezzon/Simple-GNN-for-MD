@@ -4,6 +4,30 @@ import torch
 import torch.nn.functional as Func
 
 def read_data(files):
+    """
+    Reads data from a list of LAMMPS trajectory files and extracts atom information.
+
+    Args:
+        files (list of str): List of file paths to LAMMPS trajectory files.
+
+    Returns:
+        list of dict: A list of dictionaries, each containing information about a frame.
+                      Each dictionary has the following keys:
+                      - 'timestep': The timestep of the frame.
+                      - 'num_atoms': The number of atoms in the frame.
+                      - 'box_size': The size of the simulation box.
+                      - 'atoms': A list of dictionaries, each containing information about an atom.
+                                Each atom dictionary has the following keys:
+                                - 'id': Atom ID (0-based indexing).
+                                - 'mol': Molecule ID.
+                                - 'type': Atom type.
+                                - 'x': x-coordinate.
+                                - 'y': y-coordinate.
+                                - 'z': z-coordinate.
+                                - 'fx': Force in the x-direction.
+                                - 'fy': Force in the y-direction.
+                                - 'fz': Force in the z-direction.
+    """
     data = []
     for file in files:
         with open(file, 'r') as f:
@@ -44,18 +68,67 @@ def read_data(files):
 
 # To account for periodic boundary conditions
 def minimum_image_distance(coords1, coords2, box_size):
+    """
+    Calculate the minimum image distance between sets of coordinates considering periodic boundary conditions.
 
-  delta = coords1 - coords2
-  delta -= torch.round(delta / box_size) * box_size
-  distance = torch.norm(delta, dim=-1)
-  return distance
+    Args:
+        coords1 (torch.Tensor): Tensor of shape (N, 3) representing the first set of coordinates.
+        coords2 (torch.Tensor): Tensor of shape (N, 3) representing the second set of coordinates.
+        box_size (torch.Tensor or float): Size of the periodic box.
+
+    Returns:
+        torch.Tensor: Tensor of shape (N,) representing the distances between each pair of coordinates.
+    """
+    # Check if the input shapes are the same
+    if coords1.shape != coords2.shape:
+        raise ValueError(f"Shape mismatch: coords1 has shape {coords1.shape}, but coords2 has shape {coords2.shape}")
+    
+    delta = coords1 - coords2
+    delta -= torch.round(delta / box_size) * box_size
+    distance = torch.norm(delta, dim=-1)
+    return distance
 
 # Build graphs for a SchNet architecture
-def make_SchNetlike_graphs(data):
+def make_graphs(data):
+    """
+    Build graphs for a GNN architecture from the given data.
+    Nodes represent atoms and their feature is the atom type. Nodes closer than 2.3 are connected.
+    Edge attributes contain the distance between the two atoms and informations about the bond type.
+    The targets are the three force components acting on each atom. The forces are normalized.
+
+    Args:
+        data (list of dict): List of dictionaries, each containing information about a frame.
+                             Each dictionary has the following keys:
+                             - 'timestep': The timestep of the frame.
+                             - 'num_atoms': The number of atoms in the frame.
+                             - 'box_size': The size of the simulation box.
+                             - 'atoms': A list of dictionaries, each containing information about an atom.
+                                       Each atom dictionary has the following keys:
+                                       - 'id': Atom ID (0-based indexing).
+                                       - 'mol': Molecule ID.
+                                       - 'type': Atom type.
+                                       - 'x': x-coordinate.
+                                       - 'y': y-coordinate.
+                                       - 'z': z-coordinate.
+                                       - 'fx': Force in the x-direction.
+                                       - 'fy': Force in the y-direction.
+                                       - 'fz': Force in the z-direction.
+
+    Returns:
+        list of torch_geometric.data.Data: List of graph data objects for the GNN architecture.
+    """
+    # Check if all frames have the same number of atoms
+    num_atoms = data[0]['num_atoms']
+    for frame in data:
+        if frame['num_atoms'] != num_atoms:
+            raise ValueError(f"Frame at timestep {frame['timestep']} has a different number of atoms: {frame['num_atoms']} (expected {num_atoms}) \
+                             Simulations with different numbers of atoms should be handled separately and than added.")
+
     graphs = []
+    forces_list = []
     for frame in data:
         atoms = frame['atoms']
-        x = torch.tensor([[(atom['type'] - 1.5)*2] for atom in atoms], dtype=torch.float)
+        x = torch.tensor([[atom['type']] for atom in atoms], dtype=torch.float)
 
         # Create a fully connected graph
         edge_index = torch.combinations(torch.arange(frame['num_atoms']), r=2).t()
@@ -72,13 +145,6 @@ def make_SchNetlike_graphs(data):
         edge_index = edge_index[:, mask]
         distances = distances[mask]
 
-        # Edge features are smooth 'one-hot vectors' to represent distances  
-        #dist_one_hot = [0.5, 1.02, 1.69, 1.97, 3, 4]    # 0.96 for O-H, 1.69 for H-H, 1.97 for H bonds
-        #edge_attr = torch.zeros((edge_index.size(1), len(dist_one_hot)), dtype=torch.float)
-        #for i, dist in enumerate(dist_one_hot):
-        #    edge_attr[:, i] = np.e ** (-(distances - dist)**2 / 0.15)    # 0.4 is quite arbitrary
-        #edge_attr = distances
-
         atom_mols = torch.tensor([atom['mol'] for atom in atoms])
         atom_types = torch.tensor([atom['type'] for atom in atoms])
         
@@ -91,10 +157,15 @@ def make_SchNetlike_graphs(data):
         edge_attr[~mol_diff & ~type_diff, 2] = 1  # HOH angle rigidity
         edge_attr[:, 3] = distances
 
-        y = torch.tensor([[atom['fx'], atom['fy'], atom['fz']] for atom in atoms], dtype=torch.float)
-        y_mean = y.mean(dim=0, keepdim=True)
-        y_std = y.std(dim=0, keepdim=True)
-        y = (y - y_mean) / y_std
-        graphs.append(Data(x=x, edge_index=edge_index, edge_attr=edge_attr, y=y))
+        force = torch.tensor([[atom['fx'], atom['fy'], atom['fz']] for atom in atoms], dtype=torch.float)
+
+        graphs.append(Data(x=x, edge_index=edge_index, edge_attr=edge_attr))
+        forces_list.append(force)
+    forces = torch.stack(forces_list)
+    forces_mean = forces.mean(dim=0, keepdim=True)
+    forces_std = forces.std(dim=0, keepdim=True)
+    forces = (forces - forces_mean) / forces_std
+    for i, graph in enumerate(graphs):
+        graph.y = forces[i]
     return graphs
 

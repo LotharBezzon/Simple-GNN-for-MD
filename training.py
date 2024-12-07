@@ -1,10 +1,11 @@
 import torch
 from torch_geometric.loader import DataLoader
-from DataProcessing import read_data, make_SchNetlike_graphs
-from models import GNN
+from DataProcessing import read_data, make_graphs
+from models import GNN, SimpleGNN
 from sklearn.model_selection import train_test_split
 from sklearn.utils import shuffle
 import os
+import numpy as np
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -38,7 +39,7 @@ def test(model, loader, lossFunc):
         pred = model(data)
         loss = lossFunc(pred, data.y)
         count += 1
-        if count % 64 == 0:
+        if count % 16 == 0:
             print(pred[:5], data.y[:5])
         total_loss += loss.item() * data.num_graphs
     return total_loss / len(train_loader.dataset) / batch_size
@@ -67,24 +68,25 @@ def load_checkpoint(model, optimizer, checkpoint_path):
         return 0
 
 if __name__ == '__main__':
-    files = [f'data/N216.{i}.lammpstrj' for i in range(1, 101)]
+    files = [f'data/N216.{i}.lammpstrj' for i in range(1, 31)]
     data = read_data(files)
     print('Data read')
     
-    graphs = make_SchNetlike_graphs(data)
+    graphs = make_graphs(data)
     print(len(graphs))
     print('Graphs made')
 
-    graphs = shuffle(graphs, random_state=42)
-    train_graphs, test_graphs = train_test_split(graphs, test_size=0.1, random_state=42)
-    batch_size = 16
+    np.random.shuffle(graphs)
+    test_length = int(len(graphs) / 10)
+    train_graphs, test_graphs = graphs[:-test_length], graphs[-test_length:]
+    batch_size = 64
     train_loader = DataLoader(train_graphs, batch_size=batch_size)
     test_loader = DataLoader(test_graphs, batch_size=batch_size)
     print('Data loaded')
 
-    model = GNN(1, 4, 3).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-6)
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=3, gamma=0.8)
+    model = SimpleGNN(1, 4, 3).to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=3, gamma=0.5)
     lossFunc = torch.nn.L1Loss(reduction='sum')
 
     # Load from checkpoint if available
