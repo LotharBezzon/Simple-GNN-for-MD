@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from torch_geometric.nn import MessagePassing, GATConv
 
 class mlp(torch.nn.Module):
-    def __init__(self, in_channels, out_channel, hidden_dim=128, hidden_num=1, activation=ReLU()):
+    def __init__(self, in_channels, out_channel, hidden_dim=128, hidden_num=3, activation=ReLU()):
         super().__init__()
         #normalization = BatchNorm1d(in_channels)
         self.layers = [Linear(in_channels, hidden_dim), activation]
@@ -29,7 +29,7 @@ class mlp(torch.nn.Module):
 class MPLayer(MessagePassing):
     def __init__(self, in_channels, out_channels):
         super().__init__(aggr='mean')
-        self.mlp = mlp(2*in_channels, out_channels)
+        self.mlp = mlp(in_channels, out_channels)
 
     def forward(self, edge_index, v,  e):
         # Start propagating messages.
@@ -37,7 +37,8 @@ class MPLayer(MessagePassing):
         return accumulated_message
 
     def message(self, v_i, v_j, e):
-        return self.mlp(torch.cat([v_i + v_j, e], dim=-1))
+        #return self.mlp(torch.cat([v_i + v_j, e], dim=-1))
+        return self.mlp(v_i + v_j + e)
 
 class GNN(torch.nn.Module):
     def __init__(self, node_dim, edge_dim, out_dim, embedding_dim=128, mp_num=4):

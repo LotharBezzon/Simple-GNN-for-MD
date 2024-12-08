@@ -21,7 +21,7 @@ def train(model, optimizer, loader, lossFunc, clip_value=1.0):
         loss.backward()  # Backward pass.
         
         # Gradient clipping
-        torch.nn.utils.clip_grad_norm_(model.parameters(), clip_value)
+        #torch.nn.utils.clip_grad_norm_(model.parameters(), clip_value)
         
         optimizer.step()  # Update model parameters.
         total_loss += loss.item() * data.num_graphs
@@ -39,7 +39,7 @@ def test(model, loader, lossFunc):
         pred = model(data)
         loss = lossFunc(pred, data.y)
         count += 1
-        if count % 4 == 0:
+        if count % 16 == 0:
             print(pred[:5], data.y[:5])
         total_loss += loss.item() * data.num_graphs
     return total_loss / len(train_loader.dataset) / batch_size
@@ -68,7 +68,7 @@ def load_checkpoint(model, optimizer, checkpoint_path):
         return 0
 
 if __name__ == '__main__':
-    files = [f'data/N216.{i}.lammpstrj' for i in range(1, 31)]
+    files = [f'data/N216.{i}.lammpstrj' for i in range(1, 101)]
     data = read_data(files)
     print('Data read')
     
@@ -79,14 +79,14 @@ if __name__ == '__main__':
     np.random.shuffle(graphs)
     test_length = int(len(graphs) / 10)
     train_graphs, test_graphs = graphs[:-test_length], graphs[-test_length:]
-    batch_size = 64
+    batch_size = 32
     train_loader = DataLoader(train_graphs, batch_size=batch_size)
     test_loader = DataLoader(test_graphs, batch_size=batch_size)
     print('Data loaded')
 
     model = GNN(1, 4, 3).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=3, gamma=0.5)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-6)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=3, gamma=0.7)
     lossFunc = torch.nn.L1Loss(reduction='sum')
 
     # Load from checkpoint if available
