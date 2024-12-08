@@ -1,7 +1,7 @@
 import torch
 from torch_geometric.loader import DataLoader
 from DataProcessing import read_data, make_graphs
-from models import GNN, SimpleGNN
+from models import GNN, GATModel
 from sklearn.model_selection import train_test_split
 from sklearn.utils import shuffle
 import os
@@ -12,7 +12,6 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 def train(model, optimizer, loader, lossFunc, clip_value=1.0):
     model.train()
     total_loss = 0
-    global batch_size
     for data in loader:
         data = data.to(device)
         optimizer.zero_grad()  # Clear gradients.
@@ -24,8 +23,8 @@ def train(model, optimizer, loader, lossFunc, clip_value=1.0):
         #torch.nn.utils.clip_grad_norm_(model.parameters(), clip_value)
         
         optimizer.step()  # Update model parameters.
-        total_loss += loss.item() * data.num_graphs
-    return total_loss / len(loader.dataset) / batch_size
+        total_loss += loss.item()
+    return total_loss / len(loader.dataset)
 
 
 @torch.no_grad()
@@ -33,16 +32,15 @@ def test(model, loader, lossFunc):
     model.eval()
     total_loss = 0
     count = 0
-    global batch_size
     for data in loader:
         data = data.to(device)
         pred = model(data)
         loss = lossFunc(pred, data.y)
         count += 1
-        if count % 16 == 0:
+        if count % 32 == 0:
             print(pred[:5], data.y[:5])
-        total_loss += loss.item() * data.num_graphs
-    return total_loss / len(train_loader.dataset) / batch_size
+        total_loss += loss.item()
+    return total_loss / len(loader.dataset)
 
 def save_checkpoint(model, optimizer, epoch, checkpoint_dir='checkpoints'):
     if not os.path.exists(checkpoint_dir):
@@ -84,13 +82,16 @@ if __name__ == '__main__':
     test_loader = DataLoader(test_graphs, batch_size=batch_size)
     print('Data loaded')
 
-    model = GNN(1, 4, 3).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-6)
+    model = GNN(1, 6, 3).to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=3, gamma=0.7)
     lossFunc = torch.nn.L1Loss(reduction='sum')
 
     # Load from checkpoint if available
-    start_epoch = load_checkpoint(model, optimizer, 'checkpoints/checkpoint_epoch_5.pth')
+    start_epoch = load_checkpoint(model, optimizer, 'checkpoints/checkpoint_epoch_24.pth')
+    # Delete next line
+    for g in optimizer.param_groups:
+        g['lr'] = 0.001
 
     test_losses = []
     train_losses = []

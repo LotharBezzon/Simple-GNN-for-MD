@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from torch_geometric.nn import MessagePassing, GATConv
 
 class mlp(torch.nn.Module):
-    def __init__(self, in_channels, out_channel, hidden_dim=128, hidden_num=3, activation=ReLU()):
+    def __init__(self, in_channels, out_channel, hidden_dim=128, hidden_num=3, activation=GELU()):
         super().__init__()
         #normalization = BatchNorm1d(in_channels)
         self.layers = [Linear(in_channels, hidden_dim), activation]
@@ -29,16 +29,15 @@ class mlp(torch.nn.Module):
 class MPLayer(MessagePassing):
     def __init__(self, in_channels, out_channels):
         super().__init__(aggr='mean')
-        self.mlp = mlp(in_channels, out_channels)
+        self.mlp = mlp(2*in_channels, out_channels)
 
     def forward(self, edge_index, v,  e):
-        # Start propagating messages.
         accumulated_message= self.propagate(edge_index, v=v, e=e)
         return accumulated_message
 
     def message(self, v_i, v_j, e):
-        #return self.mlp(torch.cat([v_i + v_j, e], dim=-1))
-        return self.mlp(v_i + v_j + e)
+        return self.mlp(torch.cat([v_i + v_j, e], dim=-1))
+        #return self.mlp(v_i + v_j + e)
 
 class GNN(torch.nn.Module):
     def __init__(self, node_dim, edge_dim, out_dim, embedding_dim=128, mp_num=4):
@@ -46,7 +45,7 @@ class GNN(torch.nn.Module):
         torch.manual_seed(12345)
         self.node_encoder = mlp(node_dim, embedding_dim)
         self.edge_encoder = mlp(edge_dim, embedding_dim)
-        self.message_passing_layers = ModuleList([])
+        self.message_passing_layers = ModuleList()
         self.norm_layer = BatchNorm1d(embedding_dim)
         for _ in range(mp_num):
             self.message_passing_layers.append(BatchNorm1d(embedding_dim))
@@ -56,61 +55,36 @@ class GNN(torch.nn.Module):
         
     def forward(self, data):
         v = self.node_encoder(data.x)
-        #print("After node_encoder:", v)
-        
         e = self.edge_encoder(data.edge_attr)
-        #print("After edge_encoder:", e)
-        
         e = self.norm_layer(e)
-        #print("After norm_layer:", e)
         
         for layer in self.message_passing_layers:
             if isinstance(layer, MPLayer):
                 v = v + layer(data.edge_index, v, e)  # Residual connection
-                #print("After MPLayer:", v)
             else:
                 v = layer(v)
-                #print("After BatchNorm1d:", v)
+        return self.decoder(v)
+
+class GATModel(torch.nn.Module):
+    def __init__(self, node_dim, edge_dim, out_dim, embedding_dim=32, num_layers=4, heads=8):
+        super(GATModel, self).__init__()
+        self.node_encoder = mlp(node_dim, embedding_dim, hidden_dim=embedding_dim, hidden_num=1)
+        self.edge_encoder = mlp(edge_dim, embedding_dim, hidden_dim=embedding_dim, hidden_num=1)
+        self.message_passing_layers = ModuleList([LayerNorm(embedding_dim), GATConv(embedding_dim, embedding_dim, edge_dim=embedding_dim, heads=heads, residual=True)])
+        for _ in range(num_layers - 1):
+            self.message_passing_layers.append(LayerNorm(embedding_dim * heads))
+            self.message_passing_layers.append(GATConv(embedding_dim * heads, embedding_dim, edge_dim=embedding_dim, heads=heads, residual=True))
+            self.dropout = Dropout(0.1)
+        self.decoder = mlp(embedding_dim * heads, out_dim, hidden_dim=embedding_dim, hidden_num=1)
         
-        f = self.decoder(v)
-        #print("After decoder:", f)
-        
-        return f
 
-class SimpleMPLayer(MessagePassing):
-    def __init__(self, in_channels, out_channels):
-        super().__init__(aggr='mean')
-        self.mlp = mlp(in_channels, out_channels)
-        self.norm_layer = BatchNorm1d(in_channels)
-
-    def forward(self, edge_index, v,  e):
-        # Start propagating messages.
-        #v = self.norm_layer(v)
-        accumulated_message= self.propagate(edge_index, v=v, e=e)
-        return accumulated_message
-
-    def message(self, v_i, v_j, e):
-        return self.mlp(torch.cat([v_i + v_j, e], dim=-1))
-
-class SimpleGNN(torch.nn.Module):
-    def __init__(self, node_dim, edge_dim, out_dim, embedding_dim=128, mp_num=4):
-        super().__init__()
-        torch.manual_seed(12345)
-        self.message_passing_layers = ModuleList([SimpleMPLayer(node_dim + edge_dim, embedding_dim)])
-        for _ in range(mp_num-2):
-            self.message_passing_layers.append(BatchNorm1d(embedding_dim))
-            self.message_passing_layers.append(SimpleMPLayer(embedding_dim+edge_dim, embedding_dim))
-        self.message_passing_layers.append(SimpleMPLayer(embedding_dim+edge_dim, out_dim))
-        #self.message_passing = Sequential(*self.message_passing_layers)
-        
     def forward(self, data):
-        v = self.message_passing_layers[0](data.edge_index, data.x, data.edge_attr)
-        for layer in self.message_passing_layers[1:-1]:
-            if isinstance(layer, SimpleMPLayer):
-                v = v + layer(data.edge_index, v, data.edge_attr)
+        v = self.node_encoder(data.x)
+        e = self.edge_encoder(data.edge_attr)
+        
+        for layer in self.message_passing_layers:
+            if isinstance(layer, GATConv):
+                v = layer(v, data.edge_index, edge_attr=e)
             else:
                 v = layer(v)
-        f = self. message_passing_layers[-1](data.edge_index, v, data.edge_attr)
-
-        return f
-    
+        return self.decoder(v)

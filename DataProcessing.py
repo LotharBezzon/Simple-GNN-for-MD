@@ -69,7 +69,7 @@ def read_data(files):
 # To account for periodic boundary conditions
 def minimum_image_distance(coords1, coords2, box_size):
     """
-    Calculate the minimum image distance between sets of coordinates considering periodic boundary conditions.
+    Calculate the minimum image distance between two sets of coordinates considering periodic boundary conditions. Coordinates are assued to be cartesian!
 
     Args:
         coords1 (torch.Tensor): Tensor of shape (N, 3) representing the first set of coordinates.
@@ -77,7 +77,7 @@ def minimum_image_distance(coords1, coords2, box_size):
         box_size (torch.Tensor or float): Size of the periodic box.
 
     Returns:
-        torch.Tensor: Tensor of shape (N,) representing the distances between each pair of coordinates.
+        torch.Tensor: Tensor of shape (N, 3) representing the three components of distances between each pair of coordinates.
     """
     # Check if the input shapes are the same
     if coords1.shape != coords2.shape:
@@ -86,7 +86,7 @@ def minimum_image_distance(coords1, coords2, box_size):
     delta = coords1 - coords2
     delta -= torch.round(delta / box_size) * box_size
     distance = torch.norm(delta, dim=-1)
-    return distance
+    return delta, distance
 
 # Build graphs for a SchNet architecture
 def make_graphs(data):
@@ -138,24 +138,25 @@ def make_graphs(data):
         
         positions = torch.tensor([[atom['x'], atom['y'], atom['z']] for atom in atoms], dtype=torch.float)
         start_nodes, end_nodes = edge_index
-        distances = minimum_image_distance(positions[start_nodes], positions[end_nodes], frame['box_size'])
+        dist_coords, dist_mod = minimum_image_distance(positions[start_nodes], positions[end_nodes], frame['box_size'])
         
         # Filter out edges with distances greater than 2.3
-        mask = distances <= 2.3
+        mask = dist_mod <= 2.3
         edge_index = edge_index[:, mask]
-        distances = distances[mask]
+        dist_mod = dist_mod[mask]
+        dist_coords = dist_coords[mask]
 
         atom_mols = torch.tensor([atom['mol'] for atom in atoms])
         atom_types = torch.tensor([atom['type'] for atom in atoms])
         
-        edge_attr = torch.zeros((edge_index.size(1), 4), dtype=torch.float)
+        edge_attr = torch.zeros((edge_index.size(1), 6), dtype=torch.float)
         mol_diff = atom_mols[edge_index[0]] != atom_mols[edge_index[1]]
         type_diff = atom_types[edge_index[0]] != atom_types[edge_index[1]]
         
         edge_attr[mol_diff, 0] = 1  # LJ + Coul for distant atoms
         edge_attr[~mol_diff & type_diff, 1] = 1  # OH bonds
         edge_attr[~mol_diff & ~type_diff, 2] = 1  # HOH angle rigidity
-        edge_attr[:, 3] = distances
+        edge_attr[:, 3:6] = dist_coords
 
         force = torch.tensor([[atom['fx'], atom['fy'], atom['fz']] for atom in atoms], dtype=torch.float)
 
